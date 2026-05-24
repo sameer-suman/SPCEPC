@@ -1,0 +1,22 @@
+Package: spcepc
+Title: Predictive Maintenance and Integrated Process Control
+Version: 1.0.0
+Authors@R: 
+    person("Sameer", "Suman", email = "ss.sameer0101@gmail.com", role = c("aut", "cre", "cph"))
+Description: Simulates and evaluates integrated Engineering Process Control (EPC) 
+    and Statistical Process Control (SPC). Based on the framework by Montgomery et al. (1994), 
+    this package provides tools for modeling AR(1) industrial processes, simulating 
+    Minimum Mean Square Error (MMSE) controllers, and applying Shewhart, EWMA, and CUSUM 
+    charts to detect masked mechanical failures in automated manufacturing environments.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+Imports: 
+    ggplot2,
+    stats,
+    rlang
+Suggests: 
+    knitr,
+    rmarkdown
+VignetteBuilder: knitr
+Config/roxygen2/version: 8.0.0

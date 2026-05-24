@@ -1,0 +1,141 @@
+---
+title: "The Complete Lifecycle: From Simulation to Factory Floor"
+author: "Sameer Suman"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{The Complete Lifecycle: From Simulation to Factory Floor}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.height = 5
+)
+```
+
+## The "Hidden Factory" Problem
+
+Modern manufacturing relies heavily on **Engineering Process Control (EPC)**—automated feedback loops that constantly adjust machines to keep products on target. However, these automated controllers are so effective that they often mask underlying mechanical failures (like tool wear or sensor drift). The parts look perfect, but the machine is tearing itself apart.
+
+The `spcepc` package bridges the gap between engineering automation and statistical monitoring. In this comprehensive case study, we will walk through the entire lifecycle of designing, deploying, and evaluating an integrated EPC-SPC monitoring system.
+
+```{r setup}
+library(spcepc)
+set.seed(101) # For reproducible results
+```
+
+---
+
+## Act I: The Researcher's Desk (Design & Prototyping)
+
+Imagine you are hired by a pharmaceutical company to monitor a continuous chemical reactor. The target concentration of the chemical is **100 mg/L**. Before touching the live reactor, you need to design the alarm system in a safe, simulated environment.
+
+### 1. Simulating Catastrophic Failures
+First, we want to see how a classic **Shewhart Chart** handles a massive, sudden failure—like a pressure valve snapping, causing a sudden shift of +5 mg/L. We use `simulate_epc_spc()` to generate a digital twin of the reactor.
+
+```{r simulate}
+# Simulate a 200-minute run where the valve snaps at minute 100
+sim_shift <- simulate_epc_spc(n = 200, 
+                              shift_time = 100, 
+                              disturbance_type = "shift", 
+                              shift_mag = 5, 
+                              spc_type = "shewhart")
+
+# Visualize the sudden shift
+plot_spc(sim_shift)
+```
+*Notice how the Shewhart chart is excellent at catching massive, sudden spikes immediately.*
+
+### 2. Proving the ROI
+Management wants mathematical proof that your alarms will catch a *gradual* leak faster than the operators currently do. You use the Monte Carlo `evaluate_system()` function to prove that an EWMA chart is highly effective at catching slow trends.
+
+```{r evaluate}
+# Run 500 simulations of a gradual leak (+0.1 mg/L per minute)
+eval_ewma <- evaluate_system(iterations = 500, 
+                             n = 200,
+                             shift_time = 100,
+                             disturbance_type = "trend", 
+                             trend_mag = 0.1, 
+                             spc_type = "ewma")
+
+cat("On average, the EWMA chart catches the leak in", 
+    round(eval_ewma$Average_ARL, 1), "minutes.\n")
+```
+
+---
+
+## Act II: The Factory Floor (Calibration)
+
+Management approves your design. It is time to deploy it to the live reactor. We cannot use simulated parameters anymore; we must learn the exact physical behavior of the real machine.
+
+We pull 500 minutes of historical, "known-good" sensor data from the factory database and use `calibrate_system()` to extract the Minimum Mean Square Error (MMSE) parameters and set the control limits.
+
+```{r calibrate}
+# Pull historical baseline data (simulated here for reproducibility)
+historical_data <- arima.sim(model = list(ar = 0.85, ma = -0.3), n = 500) + 100
+
+# Calibrate the system to this specific reactor
+reactor_cal <- calibrate_system(hist_data = historical_data, target = 100)
+
+cat("Learned Machine Drift (Phi):", round(reactor_cal$Phi, 3), "\n")
+cat("Calculated EWMA Upper Limit:", round(reactor_cal$EWMA_Limits["UCL"], 3), "\n")
+```
+
+---
+
+## Act III: Live Monitoring & The Post-Mortem
+
+It is Friday afternoon. The reactor is running live. Unbeknownst to the operators, at **minute 100**, a seal begins to fail, leaking an extra 0.08 mg/L into the mix every minute. The reactor's automated pump actively fights the leak, masking it from the floor staff.
+
+### 1. Applying the Live Data
+We stream the live sensor data through `apply_system()` to monitor the machine's hidden stress. We will run it through both **EWMA** and **CUSUM** algorithms to compare them.
+
+```{r apply}
+# 1. Generate live data
+live_data <- arima.sim(model = list(ar = 0.85, ma = -0.3), n = 200) + 100
+
+# 2. Inject the hidden, creeping leak starting at minute 100
+creeping_leak <- c(rep(0, 99), seq(0.08, by = 0.08, length.out = 101))
+live_data <- live_data + creeping_leak
+
+# 3. Process the data through our calibrated monitors
+dashboard_ewma <- apply_system(live_data, reactor_cal, spc_type = "ewma")
+dashboard_cusum <- apply_system(live_data, reactor_cal, spc_type = "cusum")
+```
+
+### 2. Visualizing the Dashboards
+If the operators were looking at the **EWMA Dashboard**, they would see the smooth moving average eventually get dragged down by the leak until it triggers the alarm.
+
+```{r plot-ewma}
+plot_ewma(dashboard_ewma)
+```
+
+If the operators were looking at the **CUSUM Dashboard**, they would see the cumulative stress build up like a staircase until it punches through the control limit.
+
+```{r plot-cusum}
+plot_cusum(dashboard_cusum)
+```
+
+### 3. Exposing the Masked Reality
+Why didn't the operators notice the leak without your software? Because the physical fluid levels looked fine! We use `plot_control_action()` to expose what the reactor's internal automated pump was secretly doing. 
+
+```{r plot-action}
+plot_control_action(dashboard_cusum)
+```
+*Look at the massive plunge after t=100. The automated pump was violently reducing its flow to fight the positive leak, completely masking the physical reality from the factory floor.*
+
+### 4. Financial Justification
+Finally, we use `calc_pm()` to calculate the Performance Measure (Total Variance). This allows us to report exactly how much product variation (Cost of Poor Quality) was prevented by catching the leak early.
+
+```{r pm}
+# Calculate total variance of the adjusted output
+total_variance <- calc_pm(dashboard_cusum$Adjusted_Output, target = 100)
+
+cat("The total variance of the production run was:", round(total_variance, 3), "\n")
+```
+
+By seamlessly integrating Engineering Process Control with Statistical Process Control, the `spcepc` package catches hidden machine degradation before it turns into catastrophic factory downtime.
